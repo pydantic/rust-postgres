@@ -355,47 +355,20 @@ impl Config {
         self.application_name.as_deref()
     }
 
-    /// Adds a run-time parameter to the startup message sent to the server.
+    /// Adds a run-time parameter, such as `TimeZone` or `search_path`, to the
+    /// startup message sent to the server.
     ///
-    /// The startup packet of the PostgreSQL protocol carries an arbitrary set
-    /// of run-time parameters, such as `TimeZone`, `DateStyle` or
-    /// `search_path`. The server applies them during backend start, so they act
-    /// as session defaults.
+    /// The server applies the parameter at backend start, so it acts as a
+    /// session default, which survives `RESET ALL` and `DISCARD ALL`.
     ///
-    /// Compared to a `SET` statement, this costs no round trip, and the value
-    /// survives `RESET ALL` and `DISCARD ALL`, which connection pools use to
-    /// recycle a connection. Compared to the `options` setting, the value needs
-    /// no command-line quoting, and individual parameters are the path which
-    /// the protocol documentation prefers.
+    /// A parameter of the same name added before is replaced. Parameters are
+    /// sent in the order in which they were added, after the entries this crate
+    /// sends itself, so they override a built-in entry of the same name.
+    /// Nothing is validated on the client side, and a connection pooler can
+    /// reject a parameter which it does not track.
     ///
-    /// A connection pooler between the client and the server handles the
-    /// startup packet itself, and can reject a parameter which it does not
-    /// know. PgBouncer, for example, raises an error for a startup parameter
-    /// which it cannot keep track of, and in transaction pooling mode it can
-    /// only track parameters which the server reports back to the client. Check
-    /// the documentation of the pooler before you depend on this in such a
-    /// deployment.
-    ///
-    /// If a parameter of the same name was added before, its value is replaced.
-    /// Parameters are otherwise sent in the order in which they were added,
-    /// after the entries this crate sends itself (`client_encoding`, `user`,
-    /// `database`, `options` and `application_name`). The server applies later
-    /// entries last, so a parameter added with this method overrides a built-in
-    /// entry of the same name.
-    ///
-    /// Nothing is validated on the client side. An unknown parameter name or an
-    /// invalid value makes the connection fail with an error from the server
-    /// during startup.
-    ///
-    /// This setting is not available in connection strings, because libpq
-    /// rejects connection-string keywords which it does not know, and this
-    /// crate does the same. Use the `options` setting for the string-based
-    /// path, for example `options=-c%20TimeZone%3DUTC`.
-    ///
-    /// See the PostgreSQL documentation on the
-    /// [start-up phase](https://www.postgresql.org/docs/current/protocol-flow.html)
-    /// of the client/server protocol and on
-    /// [server configuration](https://www.postgresql.org/docs/current/runtime-config.html).
+    /// Connection strings do not accept run-time parameters as keywords. Use
+    /// the `options` setting there, for example `options=-c%20TimeZone%3DUTC`.
     ///
     /// # Examples
     ///
