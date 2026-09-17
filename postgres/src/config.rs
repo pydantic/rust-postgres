@@ -129,6 +129,20 @@ use tokio_postgres::{Error, Socket};
 /// ```not_rust
 /// postgresql:///mydb?user=user&host=/var/run/postgresql
 /// ```
+///
+/// # Run-time parameters
+///
+/// The startup message which this crate sends to the server contains
+/// `client_encoding=UTF8` and, when they are configured, `user`, `database`,
+/// `options` and `application_name`. Any other run-time parameter, for example
+/// `TimeZone` or `search_path`, can be added with the [`param`] method. This
+/// crate sets no other parameter and applies no default of its own.
+///
+/// Run-time parameters cannot be set from a connection string, since a
+/// connection string accepts only the keywords listed above. Use the `options`
+/// keyword for that, for example `options=-c%20TimeZone%3DUTC`.
+///
+/// [`param`]: Config::param
 #[derive(Clone)]
 pub struct Config {
     config: tokio_postgres::Config,
@@ -220,6 +234,67 @@ impl Config {
     /// been set with the `application_name` method.
     pub fn get_application_name(&self) -> Option<&str> {
         self.config.get_application_name()
+    }
+
+    /// Adds a run-time parameter to the startup message sent to the server.
+    ///
+    /// The startup packet of the PostgreSQL protocol carries an arbitrary set
+    /// of run-time parameters, such as `TimeZone`, `DateStyle` or
+    /// `search_path`. The server applies them during backend start, so they act
+    /// as session defaults.
+    ///
+    /// Compared to a `SET` statement, this costs no round trip, and the value
+    /// survives `RESET ALL` and `DISCARD ALL`, which connection pools use to
+    /// recycle a connection. Compared to the `options` setting, the value needs
+    /// no command-line quoting, and individual parameters are the path which
+    /// the protocol documentation prefers.
+    ///
+    /// A connection pooler between the client and the server handles the
+    /// startup packet itself, and can reject a parameter which it does not
+    /// know. PgBouncer, for example, raises an error for a startup parameter
+    /// which it cannot keep track of, and in transaction pooling mode it can
+    /// only track parameters which the server reports back to the client. Check
+    /// the documentation of the pooler before you depend on this in such a
+    /// deployment.
+    ///
+    /// If a parameter of the same name was added before, its value is replaced.
+    /// Parameters are otherwise sent in the order in which they were added,
+    /// after the entries this crate sends itself (`client_encoding`, `user`,
+    /// `database`, `options` and `application_name`). The server applies later
+    /// entries last, so a parameter added with this method overrides a built-in
+    /// entry of the same name.
+    ///
+    /// Nothing is validated on the client side. An unknown parameter name or an
+    /// invalid value makes the connection fail with an error from the server
+    /// during startup.
+    ///
+    /// This setting is not available in connection strings, because libpq
+    /// rejects connection-string keywords which it does not know, and this
+    /// crate does the same. Use the `options` setting for the string-based
+    /// path, for example `options=-c%20TimeZone%3DUTC`.
+    ///
+    /// See the PostgreSQL documentation on the
+    /// [start-up phase](https://www.postgresql.org/docs/current/protocol-flow.html)
+    /// of the client/server protocol and on
+    /// [server configuration](https://www.postgresql.org/docs/current/runtime-config.html).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use postgres::Config;
+    /// let mut config = Config::new();
+    /// config.param("TimeZone", "UTC");
+    /// config.param("search_path", "myschema, public");
+    /// ```
+    pub fn param(&mut self, name: &str, value: &str) -> &mut Config {
+        self.config.param(name, value);
+        self
+    }
+
+    /// Gets the run-time parameters which have been set with the `param`
+    /// method, in the order in which they were added.
+    pub fn get_params(&self) -> &[(String, String)] {
+        self.config.get_params()
     }
 
     /// Sets the SSL configuration.
